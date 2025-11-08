@@ -12,6 +12,12 @@ interface FIFONotification {
   percentageSpent: number;
 }
 
+interface EmailResult {
+  email: string;
+  success: boolean;
+  error?: string;
+}
+
 export const ReimbursementForm: React.FC = () => {
   const { adminSigner } = useWallet();
   const [amount, setAmount] = useState<string>("");
@@ -20,6 +26,7 @@ export const ReimbursementForm: React.FC = () => {
   const [txHash, setTxHash] = useState<string>("");
   const [vaultBalance, setVaultBalance] = useState<string>("0");
   const [notifications, setNotifications] = useState<FIFONotification[]>([]);
+  const [emailResults, setEmailResults] = useState<EmailResult[]>([]);
 
   // Fetch vault balance
   useEffect(() => {
@@ -118,12 +125,24 @@ export const ReimbursementForm: React.FC = () => {
           const fifoData = await fifoResponse.json();
           console.log('FIFO notifications processed:', fifoData);
           setNotifications(fifoData.notifications || []);
+          setEmailResults(fifoData.emailResults || []);
 
-          // Show success message with notification count
+          // Show success message with notification count and email status
           const donorCount = fifoData.notifications?.length || 0;
-          alert(
-            `Reimbursement successful!\n\n${donorCount} donor(s) will be notified about this expense.`
-          );
+          const emailsSent = fifoData.summary?.emailsSent || 0;
+          const emailsFailed = fifoData.summary?.emailsFailed || 0;
+
+          let message = `Reimbursement successful!\n\n${donorCount} donor(s) affected by this expense.`;
+
+          if (emailsSent > 0) {
+            message += `\n✅ ${emailsSent} email notification(s) sent successfully.`;
+          }
+
+          if (emailsFailed > 0) {
+            message += `\n⚠️ ${emailsFailed} email(s) failed to send.`;
+          }
+
+          alert(message);
         } else {
           console.error('Failed to process FIFO notifications');
           alert("Reimbursement successful, but notification tracking failed.");
@@ -262,34 +281,59 @@ export const ReimbursementForm: React.FC = () => {
               Donor Notifications ({notifications.length} total)
             </p>
             <p className="text-xs text-green-800 dark:text-green-200 mb-3">
-              The following donors will be notified that their donations were used for this expense:
+              The following donors were notified that their donations were used for this expense:
             </p>
             <div className="space-y-2 max-h-60 overflow-y-auto">
-              {notifications.map((notification, index) => (
-                <div
-                  key={index}
-                  className="bg-white dark:bg-gray-700 rounded p-3 text-xs"
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-semibold text-gray-900 dark:text-white">
-                      {notification.email}
-                    </span>
-                    <span className="text-green-600 dark:text-green-400 font-semibold">
-                      {parseFloat(notification.amountSpent).toFixed(4)} ETH
-                    </span>
+              {notifications.map((notification, index) => {
+                const emailResult = emailResults.find(r => r.email === notification.email);
+                const emailSent = emailResult?.success;
+                const emailError = emailResult?.error;
+
+                return (
+                  <div
+                    key={index}
+                    className="bg-white dark:bg-gray-700 rounded p-3 text-xs"
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-gray-900 dark:text-white">
+                          {notification.email}
+                        </span>
+                        {emailSent === true && (
+                          <span className="text-xs bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-200 px-2 py-0.5 rounded">
+                            ✉️ Sent
+                          </span>
+                        )}
+                        {emailSent === false && (
+                          <span
+                            className="text-xs bg-red-100 dark:bg-red-800 text-red-700 dark:text-red-200 px-2 py-0.5 rounded cursor-help"
+                            title={emailError || 'Failed to send'}
+                          >
+                            ❌ Failed
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-green-600 dark:text-green-400 font-semibold">
+                        {parseFloat(notification.amountSpent).toFixed(4)} ETH
+                      </span>
+                    </div>
+                    <div className="text-gray-600 dark:text-gray-400">
+                      <span>Wallet: {notification.walletAddress.slice(0, 8)}...{notification.walletAddress.slice(-6)}</span>
+                      <span className="ml-3">
+                        ({notification.percentageSpent.toFixed(1)}% of their {parseFloat(notification.originalAmount).toFixed(4)} ETH donation)
+                      </span>
+                    </div>
                   </div>
-                  <div className="text-gray-600 dark:text-gray-400">
-                    <span>Wallet: {notification.walletAddress.slice(0, 8)}...{notification.walletAddress.slice(-6)}</span>
-                    <span className="ml-3">
-                      ({notification.percentageSpent.toFixed(1)}% of their {parseFloat(notification.originalAmount).toFixed(4)} ETH donation)
-                    </span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
-            <p className="text-xs text-green-800 dark:text-green-200 mt-3 italic">
-              Note: Email notifications will be sent once the email service is configured.
-            </p>
+            {emailResults.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-green-200 dark:border-green-700">
+                <p className="text-xs text-green-800 dark:text-green-200">
+                  Email Summary: {emailResults.filter(r => r.success).length} sent, {emailResults.filter(r => !r.success).length} failed
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>

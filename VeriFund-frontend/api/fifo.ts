@@ -10,6 +10,8 @@ import {
   processReimbursement,
   createReimbursement,
 } from './lib/storage';
+import { resend, DEFAULT_FROM_EMAIL } from './lib/resend-client';
+import { generateNotificationEmail, type NotificationEmailData } from './lib/email-template';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Enable CORS
@@ -47,14 +49,64 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Process FIFO and get notifications
       const notifications = processReimbursement(amount);
 
+      // Send email notifications to affected donors
+      const emailResults: Array<{ email: string; success: boolean; error?: string }> = [];
+
+      if (resend && notifications.length > 0) {
+        console.log(`Sending ${notifications.length} email notification(s)...`);
+
+        for (const notification of notifications) {
+          try {
+            const emailData: NotificationEmailData = {
+              donorEmail: notification.email,
+              amountSpent: notification.amountSpent,
+              originalAmount: notification.originalAmount,
+              percentageSpent: notification.percentageSpent,
+              reimbursementAmount: amount,
+              invoiceData,
+              txHash,
+              walletAddress: notification.walletAddress,
+            };
+
+            const { subject, html, text } = generateNotificationEmail(emailData);
+
+            const result = await resend.emails.send({
+              from: DEFAULT_FROM_EMAIL,
+              to: notification.email,
+              subject,
+              html,
+              text,
+            });
+
+            console.log(`✅ Email sent to ${notification.email}:`, result.data?.id);
+            emailResults.push({
+              email: notification.email,
+              success: true,
+            });
+          } catch (error) {
+            console.error(`❌ Failed to send email to ${notification.email}:`, error);
+            emailResults.push({
+              email: notification.email,
+              success: false,
+              error: error instanceof Error ? error.message : 'Unknown error',
+            });
+          }
+        }
+      } else if (!resend) {
+        console.warn('⚠️  Resend client not initialized - emails will not be sent');
+      }
+
       return res.status(200).json({
         success: true,
         reimbursement,
         notifications,
+        emailResults,
         summary: {
           totalAmount: amount,
           donorsAffected: notifications.length,
-          message: `${notifications.length} donor(s) will be notified about this reimbursement`,
+          emailsSent: emailResults.filter(r => r.success).length,
+          emailsFailed: emailResults.filter(r => !r.success).length,
+          message: `${notifications.length} donor(s) notified about this reimbursement`,
         },
       });
     }
