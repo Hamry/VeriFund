@@ -50,7 +50,8 @@ export const DonationFlow: React.FC = () => {
               Logged in as:
             </p>
             <p className="font-semibold text-gray-900 dark:text-white">
-              {currentUser.email || "User"}
+              {/* @ts-ignore - Coinbase CDP types may vary */}
+              {currentUser.email || currentUser.emailAddress || "User"}
             </p>
             {smartAccount && (
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 font-mono">

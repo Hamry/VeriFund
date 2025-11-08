@@ -59,8 +59,33 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     const syncUserState = async () => {
       if (currentUser && evmAddress) {
         // User is logged in via Coinbase embedded wallet
-        setUserEmail(currentUser.email || null);
+        // @ts-ignore - Coinbase CDP types may vary
+        const email = currentUser.email || currentUser.emailAddress || null;
+        setUserEmail(email);
         setUserStatus("LOGGED_IN");
+
+        // Register user in backend (email-wallet mapping)
+        if (email) {
+          try {
+            const response = await fetch('/api/users', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                email,
+                walletAddress: evmAddress,
+              }),
+            });
+
+            if (response.ok) {
+              const data = await response.json();
+              console.log('User registered in backend:', data.user);
+            } else {
+              console.error('Failed to register user in backend');
+            }
+          } catch (error) {
+            console.error('Error registering user:', error);
+          }
+        }
 
         // Check balance to determine if funded
         await refreshBalance();
