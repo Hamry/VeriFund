@@ -67,18 +67,57 @@ export const MakeDonation: React.FC = () => {
       // Send user operation via Smart Account using the hook
       // Note: Gas sponsorship only works on Base networks
       const result = await sendUserOperation({
-        evmSmartAccount: smartAccount,
+        evmSmartAccount: smartAccount as `0x${string}`,
         network: "ethereum-sepolia",
         calls: [
           {
-            to: CONTRACT_ADDRESS,
+            to: CONTRACT_ADDRESS as `0x${string}`,
             value: ethers.parseEther(donationAmount),
-            data: donateCalldata,
+            data: donateCalldata as `0x${string}`,
           },
         ],
       });
 
-      console.log("User operation sent:", result.userOperationHash);
+      console.log("User operation sent:", result);
+
+      // Wait for transaction confirmation
+      // The result may have different property names depending on CDP version
+      // @ts-ignore - CDP types may vary between versions
+      const txHash = result.transactionHash || result.txHash;
+      // @ts-ignore
+      const receipt = result.receipt;
+      const blockNumber = receipt?.blockNumber;
+
+      // Record donation in backend for FIFO tracking
+      if (txHash && blockNumber) {
+        console.log("Transaction confirmed:", txHash);
+        console.log("Block number:", blockNumber);
+
+        try {
+          const donationResponse = await fetch('/api/donations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              walletAddress: smartAccount,
+              amount: donationAmount,
+              txHash: txHash,
+              blockNumber: blockNumber,
+            }),
+          });
+
+          if (donationResponse.ok) {
+            const donationData = await donationResponse.json();
+            console.log('Donation recorded in backend:', donationData.donation);
+          } else {
+            console.error('Failed to record donation in backend');
+          }
+        } catch (error) {
+          console.error('Error recording donation:', error);
+          // Don't fail the UI - donation still succeeded on-chain
+        }
+      } else {
+        console.warn('Transaction hash or block number not available, skipping backend recording');
+      }
 
       // Reset form on success
       setDonationAmount("");

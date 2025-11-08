@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "mcp__Coinbase-Developer-Platform__SearchCoinbaseDeveloper"
+      "mcp__Coinbase-Developer-Platform__SearchCoinbaseDeveloper",
+      "Bash(npm run build:*)",
+      "WebSearch",
+      "Bash(npm uninstall:*)",
+      "Bash(npm install:*)"
     ],
     "deny": [],
     "ask": []

@@ -7,6 +7,25 @@
       "destination": "/api/:path*"
     }
   ],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET, POST, PUT, DELETE, OPTIONS"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "Content-Type, Authorization"
+        }
+      ]
+    }
+  ],
   "env": {
     "VITE_COINBASE_PROJECT_ID": "@vite_coinbase_project_id",
     "VITE_CONTRACT_ADDRESS": "@vite_contract_address",
