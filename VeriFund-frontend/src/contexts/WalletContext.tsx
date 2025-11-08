@@ -1,5 +1,11 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
 import { ethers, type Signer } from "ethers";
+import {
+  useCurrentUser,
+  useEvmAddress,
+  useSendEvmTransaction,
+  useSignOut
+} from "@coinbase/cdp-hooks";
 
 // User state machine: LOGGED_OUT -> LOGGED_IN -> FUNDED
 export type UserStatus = "LOGGED_OUT" | "LOGGED_IN" | "FUNDED";
@@ -8,11 +14,11 @@ export interface WalletContextType {
   // User state
   userStatus: UserStatus;
   userEmail: string | null;
-  userAddress: string | null;
+  userAddress: string | null; // EVM address from Coinbase wallet
   userBalance: string;
 
-  // Embedded wallet signer (for donors)
-  embeddedSigner: Signer | null;
+  // Coinbase transaction function (replaces embeddedSigner)
+  sendTransaction: ((options: any) => Promise<any>) | null;
 
   // Admin MetaMask state
   isAdmin: boolean;
@@ -33,37 +39,53 @@ interface WalletProviderProps {
 }
 
 export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
+  // Coinbase CDP hooks - these automatically sync with the embedded wallet
+  const { currentUser } = useCurrentUser();
+  const { evmAddress } = useEvmAddress();
+  const { sendEvmTransaction } = useSendEvmTransaction();
+  const { signOut } = useSignOut();
+
   // Donor state
   const [userStatus, setUserStatus] = useState<UserStatus>("LOGGED_OUT");
   const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [userAddress, setUserAddress] = useState<string | null>(null);
   const [userBalance, setUserBalance] = useState<string>("0");
-  const [embeddedSigner, setEmbeddedSigner] = useState<Signer | null>(null);
 
   // Admin state
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [adminSigner, setAdminSigner] = useState<Signer | null>(null);
 
-  // Login with email (placeholder - will integrate Coinbase Embedded Wallet SDK)
+  // Sync Coinbase user state to our local state
+  useEffect(() => {
+    const syncUserState = async () => {
+      if (currentUser && evmAddress) {
+        // User is logged in via Coinbase embedded wallet
+        setUserEmail(currentUser.email || null);
+        setUserStatus("LOGGED_IN");
+
+        // Check balance to determine if funded
+        await refreshBalance();
+      } else {
+        // User is logged out
+        setUserStatus("LOGGED_OUT");
+        setUserEmail(null);
+        setUserBalance("0");
+      }
+    };
+
+    syncUserState();
+  }, [currentUser, evmAddress]);
+
+  // Login with email - Coinbase handles the magic link authentication
   const loginWithEmail = async (email: string) => {
     try {
       console.log("Login requested for:", email);
 
-      // TODO: Integrate Coinbase Embedded Wallet SDK
-      // For now, this is a placeholder that simulates the flow
-      setUserEmail(email);
+      // Coinbase CDP will handle the login flow via magic link
+      // The useCurrentUser hook will automatically update when login completes
+      // This function is mainly here for UI flow - actual auth happens in components
+      // that use the Coinbase login components
 
-      // Simulate wallet creation/retrieval
-      // In production: const signer = await embeddedWalletSDK.getSigner();
-      const placeholderAddress = "0x0000000000000000000000000000000000000000";
-      setUserAddress(placeholderAddress);
-      setUserStatus("LOGGED_IN");
-
-      console.log("TODO: Implement Coinbase Embedded Wallet SDK integration");
-      console.log("User logged in (placeholder mode)");
-
-      // After login, check balance
-      await refreshBalance();
+      console.log("Coinbase embedded wallet login initiated");
     } catch (error) {
       console.error("Login failed:", error);
       throw error;
@@ -71,13 +93,18 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
   };
 
   // Logout
-  const logout = () => {
-    setUserStatus("LOGGED_OUT");
-    setUserEmail(null);
-    setUserAddress(null);
-    setUserBalance("0");
-    setEmbeddedSigner(null);
-    console.log("User logged out");
+  const logout = async () => {
+    try {
+      // Logout from Coinbase embedded wallet
+      await signOut();
+
+      setUserStatus("LOGGED_OUT");
+      setUserEmail(null);
+      setUserBalance("0");
+      console.log("User logged out");
+    } catch (error) {
+      console.error("Logout failed:", error);
+    }
   };
 
   // Connect MetaMask (for admin)
@@ -116,20 +143,23 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
 
   // Refresh user balance
   const refreshBalance = async () => {
-    if (!userAddress) return;
+    if (!evmAddress) return;
 
     try {
-      // TODO: Get balance from blockchain
-      // For now, this is a placeholder
-      // In production:
-      // const provider = new ethers.JsonRpcProvider(RPC_URL);
-      // const balance = await provider.getBalance(userAddress);
-      // setUserBalance(ethers.formatEther(balance));
+      // Get balance from blockchain using the RPC URL from env
+      const rpcUrl = import.meta.env.VITE_RPC_URL;
+      if (!rpcUrl) {
+        console.error("RPC URL not configured");
+        return;
+      }
 
-      setUserBalance("0.0");
+      const provider = new ethers.JsonRpcProvider(rpcUrl);
+      const balance = await provider.getBalance(evmAddress);
+      const balanceInEth = ethers.formatEther(balance);
+      setUserBalance(balanceInEth);
 
       // Update status based on balance
-      const balanceNum = parseFloat("0.0");
+      const balanceNum = parseFloat(balanceInEth);
       if (balanceNum > 0 && userStatus === "LOGGED_IN") {
         setUserStatus("FUNDED");
       }
@@ -158,9 +188,9 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
   const value: WalletContextType = {
     userStatus,
     userEmail,
-    userAddress,
+    userAddress: evmAddress,
     userBalance,
-    embeddedSigner,
+    sendTransaction: sendEvmTransaction,
     isAdmin,
     adminSigner,
     loginWithEmail,
