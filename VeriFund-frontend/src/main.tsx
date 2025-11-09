@@ -29,7 +29,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
 
         // App metadata (displayed in wallet UI)
         appName: "VeriFund",
-        appLogoUrl: "https://via.placeholder.com/64", // Replace with your logo
+        // appLogoUrl: "", // Optional: Add your logo URL here when ready
 
         // Authentication methods
         authMethods: ["email"], // Only email OTP for now

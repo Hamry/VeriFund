@@ -10,6 +10,7 @@ export const MakeDonation: React.FC = () => {
 
   const [donationAmount, setDonationAmount] = useState<string>("");
   const [balance, setBalance] = useState<string>("0");
+  const [pendingDonation, setPendingDonation] = useState<{ amount: string; walletAddress: string } | null>(null);
 
   // Fetch balance on mount and when smart account changes
   useEffect(() => {
@@ -34,6 +35,71 @@ export const MakeDonation: React.FC = () => {
     const interval = setInterval(fetchBalance, 10000);
     return () => clearInterval(interval);
   }, [smartAccount]);
+
+  // Record donation when transaction succeeds
+  useEffect(() => {
+    const recordDonation = async () => {
+      if (status !== 'success' || !data || !pendingDonation) return;
+
+      console.log('🎉 Transaction succeeded! Extracting details...');
+      console.log('📦 Full data object:', data);
+
+      // @ts-ignore - CDP types may vary
+      const txHash = data.transactionHash || data.txHash;
+
+      // @ts-ignore - CDP types may vary - blockNumber might be in receipts array
+      let blockNumber = data.blockNumber || data.receipt?.blockNumber;
+
+      // If not found directly, check receipts array
+      if (!blockNumber && data.receipts && data.receipts.length > 0) {
+        // @ts-ignore
+        blockNumber = data.receipts[0].blockNumber;
+        console.log('📍 Block number extracted from receipts:', blockNumber);
+      }
+
+      console.log('🔗 Transaction Hash:', txHash);
+      console.log('🧱 Block Number:', blockNumber);
+
+      if (!txHash || !blockNumber) {
+        console.error('❌ Transaction succeeded but missing txHash or blockNumber');
+        console.error('Available data:', data);
+        console.error('Available data keys:', Object.keys(data));
+        return;
+      }
+
+      try {
+        console.log('Recording donation in backend...');
+        console.log('Transaction hash:', txHash);
+        console.log('Block number:', blockNumber);
+
+        const response = await fetch('http://localhost:3001/api/donations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            walletAddress: pendingDonation.walletAddress,
+            amount: pendingDonation.amount,
+            txHash: txHash,
+            blockNumber: blockNumber,
+          }),
+        });
+
+        if (response.ok) {
+          const donationData = await response.json();
+          console.log('✅ Donation recorded in backend:', donationData.donation);
+        } else {
+          const errorData = await response.json();
+          console.error('Failed to record donation in backend:', errorData);
+        }
+      } catch (error) {
+        console.error('Error recording donation:', error);
+      } finally {
+        // Clear pending donation
+        setPendingDonation(null);
+      }
+    };
+
+    recordDonation();
+  }, [status, data, pendingDonation]);
 
   const handleDonate = async () => {
     if (!donationAmount || parseFloat(donationAmount) <= 0) {
@@ -60,13 +126,19 @@ export const MakeDonation: React.FC = () => {
       console.log("From Smart Account:", smartAccount);
       console.log("To Contract:", CONTRACT_ADDRESS);
 
+      // Set pending donation (will be recorded when transaction succeeds)
+      setPendingDonation({
+        amount: donationAmount,
+        walletAddress: smartAccount,
+      });
+
       // Encode the donate() function call
       const contractInterface = new ethers.Interface(CONTRACT_ABI);
       const donateCalldata = contractInterface.encodeFunctionData("donate");
 
       // Send user operation via Smart Account using the hook
       // Note: Gas sponsorship only works on Base networks
-      const result = await sendUserOperation({
+      await sendUserOperation({
         evmSmartAccount: smartAccount as `0x${string}`,
         network: "ethereum-sepolia",
         calls: [
@@ -78,51 +150,14 @@ export const MakeDonation: React.FC = () => {
         ],
       });
 
-      console.log("User operation sent:", result);
+      // Note: Transaction recording will happen automatically in useEffect when status === 'success'
+      console.log("User operation submitted, waiting for confirmation...");
 
-      // Wait for transaction confirmation
-      // The result may have different property names depending on CDP version
-      // @ts-ignore - CDP types may vary between versions
-      const txHash = result.transactionHash || result.txHash;
-      // @ts-ignore
-      const receipt = result.receipt;
-      const blockNumber = receipt?.blockNumber;
-
-      // Record donation in backend for FIFO tracking
-      if (txHash && blockNumber) {
-        console.log("Transaction confirmed:", txHash);
-        console.log("Block number:", blockNumber);
-
-        try {
-          const donationResponse = await fetch('/api/donations', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              walletAddress: smartAccount,
-              amount: donationAmount,
-              txHash: txHash,
-              blockNumber: blockNumber,
-            }),
-          });
-
-          if (donationResponse.ok) {
-            const donationData = await donationResponse.json();
-            console.log('Donation recorded in backend:', donationData.donation);
-          } else {
-            console.error('Failed to record donation in backend');
-          }
-        } catch (error) {
-          console.error('Error recording donation:', error);
-          // Don't fail the UI - donation still succeeded on-chain
-        }
-      } else {
-        console.warn('Transaction hash or block number not available, skipping backend recording');
-      }
-
-      // Reset form on success
+      // Reset form
       setDonationAmount("");
     } catch (err) {
       console.error("Donation failed:", err);
+      setPendingDonation(null); // Clear pending donation on error
       alert(
         "Donation failed. Please try again.\n\n" +
           (err instanceof Error ? err.message : String(err))
