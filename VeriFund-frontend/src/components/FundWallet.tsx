@@ -1,54 +1,27 @@
+import { useCurrentUser } from "@coinbase/cdp-hooks";
 import { useState } from "react";
-import { useWallet } from "../contexts/WalletContext";
 
 export const FundWallet: React.FC = () => {
-  const { userAddress, userBalance, refreshBalance } = useWallet();
-  const [amountUSD, setAmountUSD] = useState<string>("");
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const { currentUser } = useCurrentUser();
+  const smartAccount = currentUser?.evmSmartAccounts?.[0];
+  const [copied, setCopied] = useState(false);
 
-  const handleFundWallet = async () => {
-    if (!amountUSD || parseFloat(amountUSD) <= 0) {
-      alert("Please enter a valid amount");
-      return;
-    }
-
-    setIsLoading(true);
-
-    try {
-      console.log("Opening Coinbase Onramp widget...");
-      console.log("Amount USD:", amountUSD);
-      console.log("Destination Address:", userAddress);
-
-      // TODO: Integrate Coinbase Onramp SDK
-      // Example implementation:
-      // const onramp = new CoinbaseOnramp({
-      //   appId: import.meta.env.VITE_COINBASE_ONRAMP_APP_ID,
-      //   destinationAddress: userAddress,
-      //   amount: amountUSD,
-      //   currency: 'USD',
-      //   onSuccess: () => {
-      //     console.log('Funding successful!');
-      //     refreshBalance();
-      //   },
-      //   onExit: () => {
-      //     setIsLoading(false);
-      //   }
-      // });
-      // onramp.open();
-
-      alert(
-        "TODO: Coinbase Onramp integration\n\nThis will open the Coinbase Onramp widget to fund your wallet with a credit card."
-      );
-
-      // Simulate success for demo purposes
-      await refreshBalance();
-    } catch (error) {
-      console.error("Funding failed:", error);
-      alert("Failed to open funding widget. See console for details.");
-    } finally {
-      setIsLoading(false);
-    }
+  const handleCopyAddress = () => {
+    if (!smartAccount) return;
+    navigator.clipboard.writeText(smartAccount);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
+
+  if (!smartAccount) {
+    return (
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+        <p className="text-gray-600 dark:text-gray-400">
+          Loading wallet...
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
@@ -56,73 +29,83 @@ export const FundWallet: React.FC = () => {
         Fund Your Wallet
       </h2>
 
-      <div className="mb-6">
-        <p className="text-gray-700 dark:text-gray-300 mb-2">
-          Welcome! To make a donation, first fund your wallet with cryptocurrency.
+      <p className="text-gray-700 dark:text-gray-300 mb-6">
+        To make a donation, you'll need to add Sepolia testnet ETH to your wallet.
+        You can get test ETH from a faucet or transfer from another wallet.
+      </p>
+
+      {/* Wallet Address Display */}
+      <div className="mb-6 bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
+        <p className="text-sm text-blue-900 dark:text-blue-100 mb-2">
+          <span className="font-semibold">Your Wallet Address:</span>
         </p>
-        <div className="bg-blue-50 dark:bg-blue-900 rounded-lg p-4">
-          <p className="text-sm text-blue-900 dark:text-blue-100">
-            <span className="font-semibold">Your Wallet Address:</span>
-          </p>
-          <code className="text-xs bg-white dark:bg-gray-700 px-2 py-1 rounded mt-1 block break-all text-gray-800 dark:text-gray-200">
-            {userAddress}
+        <div className="flex items-center gap-2">
+          <code className="flex-1 text-xs bg-white dark:bg-gray-700 px-3 py-2 rounded break-all text-gray-800 dark:text-gray-200">
+            {smartAccount}
           </code>
-          <p className="text-sm text-blue-900 dark:text-blue-100 mt-2">
-            <span className="font-semibold">Current Balance:</span>{" "}
-            <span className="font-mono">{userBalance} ETH</span>
-          </p>
-        </div>
-      </div>
-
-      <div className="space-y-4">
-        <div>
-          <label
-            htmlFor="amount"
-            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+          <button
+            onClick={handleCopyAddress}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded transition-colors whitespace-nowrap"
           >
-            Amount (USD)
-          </label>
-          <input
-            id="amount"
-            type="number"
-            min="1"
-            step="1"
-            value={amountUSD}
-            onChange={(e) => setAmountUSD(e.target.value)}
-            placeholder="25"
-            className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-          />
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            Minimum: $1 USD
-          </p>
+            {copied ? "Copied!" : "Copy"}
+          </button>
         </div>
-
-        <button
-          onClick={handleFundWallet}
-          disabled={isLoading || !amountUSD}
-          className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold py-3 px-6 rounded-lg transition duration-200 disabled:cursor-not-allowed"
-        >
-          {isLoading ? "Opening Wallet..." : "Fund with Credit Card"}
-        </button>
-
-        <div className="bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700 rounded-lg p-4">
-          <p className="text-sm text-yellow-800 dark:text-yellow-200">
-            <span className="font-semibold">Note:</span> This will open a secure
-            Coinbase payment window where you can purchase ETH with a credit card.
-            The funds will be sent directly to your wallet.
-          </p>
-        </div>
+        <p className="text-xs text-blue-800 dark:text-blue-200 mt-3">
+          This is a Smart Account - gas fees are sponsored when you donate!
+        </p>
       </div>
 
-      {/* Alternative funding methods */}
-      <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">
-          Alternative: Send ETH Directly
-        </h3>
-        <p className="text-sm text-gray-600 dark:text-gray-400">
-          If you already have ETH, you can send it directly to your wallet address
-          above from any exchange or wallet.
-        </p>
+      {/* Instructions */}
+      <div className="space-y-4">
+        <div className="bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700 rounded-lg p-4">
+          <p className="text-sm font-semibold text-green-900 dark:text-green-100 mb-2">
+            Option 1: Get Sepolia Test ETH (Free)
+          </p>
+          <p className="text-xs text-green-800 dark:text-green-200 mb-3">
+            Use a faucet to get free Sepolia testnet ETH:
+          </p>
+          <ul className="text-xs text-green-800 dark:text-green-200 space-y-2">
+            <li>
+              <a
+                href="https://www.alchemy.com/faucets/ethereum-sepolia"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-green-600 dark:hover:text-green-400"
+              >
+                Alchemy Sepolia Faucet →
+              </a>
+            </li>
+            <li>
+              <a
+                href="https://sepoliafaucet.com/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-green-600 dark:hover:text-green-400"
+              >
+                Sepolia PoW Faucet →
+              </a>
+            </li>
+            <li>
+              <a
+                href="https://www.infura.io/faucet/sepolia"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-green-600 dark:hover:text-green-400"
+              >
+                Infura Sepolia Faucet →
+              </a>
+            </li>
+          </ul>
+        </div>
+
+        <div className="bg-purple-50 dark:bg-purple-900 border border-purple-200 dark:border-purple-700 rounded-lg p-4">
+          <p className="text-sm font-semibold text-purple-900 dark:text-purple-100 mb-2">
+            Option 2: Transfer from Another Wallet
+          </p>
+          <p className="text-xs text-purple-800 dark:text-purple-200">
+            Send Sepolia ETH from MetaMask, Coinbase Wallet, or any other wallet to the address above.
+          </p>
+        </div>
       </div>
     </div>
   );
