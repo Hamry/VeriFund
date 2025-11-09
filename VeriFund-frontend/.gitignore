@@ -15,6 +15,11 @@ dist-ssr
 # Environment variables
 .env.local
 .env.*.local
+.env
+
+
+# Local JSON data storage
+data/
 
 # Editor directories and files
 .vscode/*
@@ -26,3 +31,5 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+.vercel

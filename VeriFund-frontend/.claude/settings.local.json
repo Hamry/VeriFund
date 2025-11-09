@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__Coinbase-Developer-Platform__SearchCoinbaseDeveloper"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
