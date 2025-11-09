@@ -1,6 +1,4 @@
 {
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist",
   "rewrites": [
     {
       "source": "/api/:path*",
@@ -25,12 +23,5 @@
         }
       ]
     }
-  ],
-  "env": {
-    "VITE_COINBASE_PROJECT_ID": "@vite_coinbase_project_id",
-    "VITE_CONTRACT_ADDRESS": "@vite_contract_address",
-    "VITE_RPC_URL": "@vite_rpc_url",
-    "CDP_API_KEY_NAME": "@cdp_api_key_name",
-    "CDP_API_KEY_PRIVATE_KEY": "@cdp_api_key_private_key"
-  }
+  ]
 }
