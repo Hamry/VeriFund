@@ -111,18 +111,15 @@ export const PublicLedger: React.FC = () => {
 
         // Determine what blocks to scan
         let startBlock: number;
-        let scanReason: string;
 
         if (cache && cache.lastScannedBlock > 0) {
           // Incremental update: only scan NEW blocks since last cache
           startBlock = cache.lastScannedBlock + 1;
-          scanReason = `incremental update from block ${startBlock}`;
           console.log(`🔄 Incremental scan: blocks ${startBlock} to ${currentBlock}`);
         } else {
           // Full scan: scan last 500 blocks (Alchemy free tier friendly)
           const BLOCKS_TO_SCAN = 500;
           startBlock = Math.max(0, currentBlock - BLOCKS_TO_SCAN);
-          scanReason = `initial scan of last ${BLOCKS_TO_SCAN} blocks`;
           console.log(`📊 Full scan: blocks ${startBlock} to ${currentBlock}`);
           console.log(`⚠️ Alchemy free tier: scanning last ${BLOCKS_TO_SCAN} blocks only`);
         }
