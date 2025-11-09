@@ -1,0 +1,36 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "/api/:path*"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET, POST, PUT, DELETE, OPTIONS"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "Content-Type, Authorization"
+        }
+      ]
+    }
+  ],
+  "env": {
+    "VITE_COINBASE_PROJECT_ID": "@vite_coinbase_project_id",
+    "VITE_CONTRACT_ADDRESS": "@vite_contract_address",
+    "VITE_RPC_URL": "@vite_rpc_url",
+    "CDP_API_KEY_NAME": "@cdp_api_key_name",
+    "CDP_API_KEY_PRIVATE_KEY": "@cdp_api_key_private_key"
+  }
+}

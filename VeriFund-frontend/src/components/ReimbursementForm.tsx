@@ -3,6 +3,21 @@ import { ethers } from "ethers";
 import { useWallet } from "../contexts/WalletContext";
 import { CONTRACT_ADDRESS, CONTRACT_ABI, contract } from "../web3-config";
 
+interface FIFONotification {
+  email: string;
+  walletAddress: string;
+  amountSpent: string;
+  donationId: string;
+  originalAmount: string;
+  percentageSpent: number;
+}
+
+interface EmailResult {
+  email: string;
+  success: boolean;
+  error?: string;
+}
+
 export const ReimbursementForm: React.FC = () => {
   const { adminSigner } = useWallet();
   const [amount, setAmount] = useState<string>("");
@@ -10,6 +25,8 @@ export const ReimbursementForm: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [txHash, setTxHash] = useState<string>("");
   const [vaultBalance, setVaultBalance] = useState<string>("0");
+  const [notifications, setNotifications] = useState<FIFONotification[]>([]);
+  const [emailResults, setEmailResults] = useState<EmailResult[]>([]);
 
   // Fetch vault balance
   useEffect(() => {
@@ -86,10 +103,54 @@ export const ReimbursementForm: React.FC = () => {
 
       // Wait for confirmation
       console.log("Waiting for confirmation...");
-      await tx.wait();
+      const receipt = await tx.wait();
 
       console.log("Reimbursement confirmed!");
-      alert("Reimbursement successful!");
+      console.log("Block number:", receipt.blockNumber);
+
+      // Process FIFO notifications in backend
+      try {
+        const fifoResponse = await fetch('/api/fifo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            amount,
+            txHash: tx.hash,
+            blockNumber: receipt.blockNumber,
+            invoiceData,
+          }),
+        });
+
+        if (fifoResponse.ok) {
+          const fifoData = await fifoResponse.json();
+          console.log('FIFO notifications processed:', fifoData);
+          setNotifications(fifoData.notifications || []);
+          setEmailResults(fifoData.emailResults || []);
+
+          // Show success message with notification count and email status
+          const donorCount = fifoData.notifications?.length || 0;
+          const emailsSent = fifoData.summary?.emailsSent || 0;
+          const emailsFailed = fifoData.summary?.emailsFailed || 0;
+
+          let message = `Reimbursement successful!\n\n${donorCount} donor(s) affected by this expense.`;
+
+          if (emailsSent > 0) {
+            message += `\n✅ ${emailsSent} email notification(s) sent successfully.`;
+          }
+
+          if (emailsFailed > 0) {
+            message += `\n⚠️ ${emailsFailed} email(s) failed to send.`;
+          }
+
+          alert(message);
+        } else {
+          console.error('Failed to process FIFO notifications');
+          alert("Reimbursement successful, but notification tracking failed.");
+        }
+      } catch (error) {
+        console.error('Error processing FIFO:', error);
+        alert("Reimbursement successful, but notification tracking failed.");
+      }
 
       // Reset form
       setAmount("");
@@ -209,8 +270,72 @@ export const ReimbursementForm: React.FC = () => {
             <li>Permanently recorded on the blockchain</li>
             <li>Visible in the public ledger with invoice details</li>
             <li>Subject to community review and oversight</li>
+            <li>Donors affected by this expense will be notified via email (FIFO)</li>
           </ul>
         </div>
+
+        {/* FIFO Notifications Display */}
+        {notifications.length > 0 && (
+          <div className="bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700 rounded-lg p-4">
+            <p className="text-sm font-semibold text-green-900 dark:text-green-100 mb-3">
+              Donor Notifications ({notifications.length} total)
+            </p>
+            <p className="text-xs text-green-800 dark:text-green-200 mb-3">
+              The following donors were notified that their donations were used for this expense:
+            </p>
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {notifications.map((notification, index) => {
+                const emailResult = emailResults.find(r => r.email === notification.email);
+                const emailSent = emailResult?.success;
+                const emailError = emailResult?.error;
+
+                return (
+                  <div
+                    key={index}
+                    className="bg-white dark:bg-gray-700 rounded p-3 text-xs"
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-gray-900 dark:text-white">
+                          {notification.email}
+                        </span>
+                        {emailSent === true && (
+                          <span className="text-xs bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-200 px-2 py-0.5 rounded">
+                            ✉️ Sent
+                          </span>
+                        )}
+                        {emailSent === false && (
+                          <span
+                            className="text-xs bg-red-100 dark:bg-red-800 text-red-700 dark:text-red-200 px-2 py-0.5 rounded cursor-help"
+                            title={emailError || 'Failed to send'}
+                          >
+                            ❌ Failed
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-green-600 dark:text-green-400 font-semibold">
+                        {parseFloat(notification.amountSpent).toFixed(4)} ETH
+                      </span>
+                    </div>
+                    <div className="text-gray-600 dark:text-gray-400">
+                      <span>Wallet: {notification.walletAddress.slice(0, 8)}...{notification.walletAddress.slice(-6)}</span>
+                      <span className="ml-3">
+                        ({notification.percentageSpent.toFixed(1)}% of their {parseFloat(notification.originalAmount).toFixed(4)} ETH donation)
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {emailResults.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-green-200 dark:border-green-700">
+                <p className="text-xs text-green-800 dark:text-green-200">
+                  Email Summary: {emailResults.filter(r => r.success).length} sent, {emailResults.filter(r => !r.success).length} failed
+                </p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
