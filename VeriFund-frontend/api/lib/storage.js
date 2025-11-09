@@ -1,56 +1,69 @@
 /**
- * Simple JSON file storage for Vercel
+ * Simple JSON file storage for VeriFund
  *
  * IMPORTANT: This is a simplified storage solution for development.
  * For production, use a proper database (PostgreSQL, MongoDB, etc.)
  *
- * Data is stored in /tmp directory on Vercel (ephemeral, resets on deployment)
+ * Data is stored in local 'data' directory (persistent across restarts)
  */
 
 import fs from 'fs';
 import path from 'path';
 
-// Storage directory (use /tmp on Vercel, local directory in dev)
-const STORAGE_DIR = process.env.VERCEL ? '/tmp/verifund-data' : path.join(process.cwd(), 'data');
+// Storage directory - use local 'data' directory for Express server
+const STORAGE_DIR = path.join(process.cwd(), 'data');
 
 // Ensure storage directory exists
 if (!fs.existsSync(STORAGE_DIR)) {
   fs.mkdirSync(STORAGE_DIR, { recursive: true });
 }
 
-export interface User {
-  email: string;
-  walletAddress: string;
-  createdAt: string;
-}
+/**
+ * @typedef {Object} User
+ * @property {string} email
+ * @property {string} walletAddress
+ * @property {string} createdAt
+ */
 
-export interface Donation {
-  id: string;
-  email: string;
-  walletAddress: string;
-  amount: string; // in ETH
-  txHash: string;
-  blockNumber: number;
-  timestamp: string;
-  remaining: string; // Amount not yet "spent" by reimbursements (for FIFO)
-}
+/**
+ * @typedef {Object} Donation
+ * @property {string} id
+ * @property {string} email
+ * @property {string} walletAddress
+ * @property {string} amount - in ETH
+ * @property {string} txHash
+ * @property {number} blockNumber
+ * @property {string} timestamp
+ * @property {string} remaining - Amount not yet "spent" by reimbursements (for FIFO)
+ */
 
-export interface Reimbursement {
-  id: string;
-  amount: string; // in ETH
-  txHash: string;
-  blockNumber: number;
-  timestamp: string;
-  invoiceData: string;
-}
+/**
+ * @typedef {Object} Reimbursement
+ * @property {string} id
+ * @property {string} amount - in ETH
+ * @property {string} txHash
+ * @property {number} blockNumber
+ * @property {string} timestamp
+ * @property {string} invoiceData
+ */
+
+/**
+ * @typedef {Object} FIFONotification
+ * @property {string} email
+ * @property {string} walletAddress
+ * @property {string} amountSpent
+ * @property {string} donationId
+ * @property {string} originalAmount
+ * @property {number} percentageSpent
+ */
 
 // Get file path for a storage collection
-function getFilePath(collection: 'users' | 'donations' | 'reimbursements'): string {
+function getFilePath(collection) {
   return path.join(STORAGE_DIR, `${collection}.json`);
 }
 
 // Read data from a collection
-function readCollection<T>(collection: 'users' | 'donations' | 'reimbursements'): T[] {
+function readCollection(collection) {
   const filePath = getFilePath(collection);
 
   if (!fs.existsSync(filePath)) {
@@ -59,7 +72,7 @@ function readCollection<T>(collection: 'users' | 'donations' | 'reimbursements')
 
   try {
     const data = fs.readFileSync(filePath, 'utf-8');
-    return JSON.parse(data) as T[];
+    return JSON.parse(data);
   } catch (error) {
     console.error(`Error reading ${collection}:`, error);
     return [];
@@ -67,7 +80,7 @@ function readCollection<T>(collection: 'users' | 'donations' | 'reimbursements')
 }
 
 // Write data to a collection
-function writeCollection<T>(collection: 'users' | 'donations' | 'reimbursements', data: T[]): void {
+function writeCollection(collection, data) {
   const filePath = getFilePath(collection);
 
   try {
@@ -80,25 +93,25 @@ function writeCollection<T>(collection: 'users' | 'donations' | 'reimbursements'
 
 // ============= USERS =============
 
-export function getUsers(): User[] {
-  return readCollection<User>('users');
+export function getUsers() {
+  return readCollection('users');
 }
 
-export function getUserByEmail(email: string): User | undefined {
+export function getUserByEmail(email) {
   const users = getUsers();
   return users.find(u => u.email.toLowerCase() === email.toLowerCase());
 }
 
-export function getUserByWallet(walletAddress: string): User | undefined {
+export function getUserByWallet(walletAddress) {
   const users = getUsers();
   return users.find(u => u.walletAddress.toLowerCase() === walletAddress.toLowerCase());
 }
 
-export function createOrUpdateUser(email: string, walletAddress: string): User {
+export function createOrUpdateUser(email, walletAddress) {
   const users = getUsers();
   const existingIndex = users.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
 
-  const user: User = {
+  const user = {
     email,
     walletAddress,
     createdAt: existingIndex >= 0 ? users[existingIndex].createdAt : new Date().toISOString(),
@@ -116,25 +129,19 @@ export function createOrUpdateUser(email: string, walletAddress: string): User {
 
 // ============= DONATIONS =============
 
-export function getDonations(): Donation[] {
-  return readCollection<Donation>('donations');
+export function getDonations() {
+  return readCollection('donations');
 }
 
-export function getDonationsByEmail(email: string): Donation[] {
+export function getDonationsByEmail(email) {
   const donations = getDonations();
   return donations.filter(d => d.email.toLowerCase() === email.toLowerCase());
 }
 
-export function createDonation(
-  email: string,
-  walletAddress: string,
-  amount: string,
-  txHash: string,
-  blockNumber: number
-): Donation {
+export function createDonation(email, walletAddress, amount, txHash, blockNumber) {
   const donations = getDonations();
 
-  const donation: Donation = {
+  const donation = {
     id: `${txHash}-${blockNumber}`,
     email,
     walletAddress,
@@ -151,7 +158,7 @@ export function createDonation(
   return donation;
 }
 
-export function updateDonationRemaining(donationId: string, remaining: string): void {
+export function updateDonationRemaining(donationId, remaining) {
   const donations = getDonations();
   const index = donations.findIndex(d => d.id === donationId);
 
@@ -163,19 +170,14 @@ export function updateDonationRemaining(donationId: string, remaining: string): 
 
 // ============= REIMBURSEMENTS =============
 
-export function getReimbursements(): Reimbursement[] {
-  return readCollection<Reimbursement>('reimbursements');
+export function getReimbursements() {
+  return readCollection('reimbursements');
 }
 
-export function createReimbursement(
-  amount: string,
-  txHash: string,
-  blockNumber: number,
-  invoiceData: string
-): Reimbursement {
+export function createReimbursement(amount, txHash, blockNumber, invoiceData) {
   const reimbursements = getReimbursements();
 
-  const reimbursement: Reimbursement = {
+  const reimbursement = {
     id: `${txHash}-${blockNumber}`,
     amount,
     txHash,
@@ -192,20 +194,13 @@ export function createReimbursement(
 
 // ============= FIFO CALCULATIONS =============
 
-export interface FIFONotification {
-  email: string;
-  walletAddress: string;
-  amountSpent: string;
-  donationId: string;
-  originalAmount: string;
-  percentageSpent: number;
-}
-
 /**
  * Calculate FIFO notifications for a reimbursement
  * Returns which donors should be notified and how much of their donation was spent
+ * @param {string} reimbursementAmount
+ * @returns {FIFONotification[]}
  */
-export function calculateFIFONotifications(reimbursementAmount: string): FIFONotification[] {
+export function calculateFIFONotifications(reimbursementAmount) {
   const donations = getDonations();
 
   // Sort by timestamp (oldest first) for FIFO
@@ -214,7 +209,7 @@ export function calculateFIFONotifications(reimbursementAmount: string): FIFONot
   );
 
   let remainingReimbursement = parseFloat(reimbursementAmount);
-  const notifications: FIFONotification[] = [];
+  const notifications = [];
 
   for (const donation of sortedDonations) {
     const donationRemaining = parseFloat(donation.remaining);
@@ -247,8 +242,10 @@ export function calculateFIFONotifications(reimbursementAmount: string): FIFONot
 
 /**
  * Process a reimbursement and update donation remaining amounts
+ * @param {string} reimbursementAmount
+ * @returns {FIFONotification[]}
  */
-export function processReimbursement(reimbursementAmount: string): FIFONotification[] {
+export function processReimbursement(reimbursementAmount) {
   const notifications = calculateFIFONotifications(reimbursementAmount);
 
   // Update the remaining amounts for affected donations

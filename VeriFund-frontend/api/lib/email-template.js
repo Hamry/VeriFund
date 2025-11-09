@@ -2,18 +2,24 @@
  * Email template for FIFO donation notifications
  */
 
-export interface NotificationEmailData {
-  donorEmail: string;
-  amountSpent: string;
-  originalAmount: string;
-  percentageSpent: number;
-  reimbursementAmount: string;
-  invoiceData: string;
-  txHash: string;
-  walletAddress: string;
-}
+/**
+ * @typedef {Object} NotificationEmailData
+ * @property {string} donorEmail
+ * @property {string} amountSpent
+ * @property {string} originalAmount
+ * @property {number} percentageSpent
+ * @property {string} reimbursementAmount
+ * @property {string} invoiceData
+ * @property {string} txHash
+ * @property {string} walletAddress
+ */
 
-export function generateNotificationEmail(data: NotificationEmailData): { subject: string; html: string; text: string } {
+/**
+ * Generate notification email
+ * @param {NotificationEmailData} data
+ * @returns {{ subject: string, html: string, text: string }}
+ */
+export function generateNotificationEmail(data) {
   const subject = `VeriFund: Your Donation Was Used - ${data.amountSpent} ETH`;
 
   const html = `
@@ -48,7 +54,7 @@ export function generateNotificationEmail(data: NotificationEmailData): { subjec
 
               <!-- Greeting -->
               <h2 style="margin: 0 0 20px 0; color: #1f2937; font-size: 24px; font-weight: 600;">
-                Your Donation Was Used! üéâ
+                Your Donation Was Used! <â
               </h2>
 
               <p style="margin: 0 0 20px 0; color: #4b5563; font-size: 16px; line-height: 1.6;">
@@ -108,7 +114,7 @@ export function generateNotificationEmail(data: NotificationEmailData): { subjec
               <!-- Blockchain Verification -->
               <div style="margin: 30px 0; padding: 20px; background-color: #fef3c7; border-radius: 8px; border-left: 4px solid #f59e0b;">
                 <h3 style="margin: 0 0 12px 0; color: #92400e; font-size: 16px; font-weight: 600;">
-                  üîê Blockchain Verified
+                  = Blockchain Verified
                 </h3>
                 <p style="margin: 0 0 12px 0; color: #78350f; font-size: 14px; line-height: 1.6;">
                   This transaction is permanently recorded on the Ethereum blockchain for complete transparency.
@@ -116,7 +122,7 @@ export function generateNotificationEmail(data: NotificationEmailData): { subjec
                 <p style="margin: 0; font-size: 12px;">
                   <a href="https://sepolia.etherscan.io/tx/${data.txHash}"
                      style="color: #d97706; text-decoration: underline; word-break: break-all;">
-                    View Transaction on Etherscan ‚Üí
+                    View Transaction on Etherscan í
                   </a>
                 </p>
               </div>
@@ -189,8 +195,8 @@ Network: Ethereum Sepolia Testnet
 }
 
 // Helper function to escape HTML
-function escapeHtml(text: string): string {
-  const map: { [key: string]: string } = {
+function escapeHtml(text) {
+  const map = {
     '&': '&amp;',
     '<': '&lt;',
     '>': '&gt;',

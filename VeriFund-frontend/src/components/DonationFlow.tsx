@@ -2,10 +2,52 @@ import { AuthButton } from "@coinbase/cdp-react/components/AuthButton";
 import { useCurrentUser } from "@coinbase/cdp-hooks";
 import { FundWallet } from "./FundWallet";
 import { MakeDonation } from "./MakeDonation";
+import { useEffect } from "react";
 
 export const DonationFlow: React.FC = () => {
   const { currentUser } = useCurrentUser();
   const smartAccount = currentUser?.evmSmartAccounts?.[0];
+
+  // Register user in backend when they log in
+  useEffect(() => {
+    const registerUser = async () => {
+      if (!currentUser || !smartAccount) return;
+
+      // Extract email from authenticationMethods
+      // @ts-ignore - Coinbase CDP types may vary
+      const email = currentUser.authenticationMethods?.email?.email;
+
+      if (!email) {
+        console.warn('⚠️ User logged in but no email address found');
+        console.warn('Available user data:', JSON.stringify(currentUser, null, 2));
+        return;
+      }
+
+      console.log('📧 Registering user:', email, 'with wallet:', smartAccount);
+
+      try {
+        const response = await fetch('http://localhost:3001/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: email,
+            walletAddress: smartAccount,
+          }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          console.log('✅ User registered in backend:', data.user);
+        } else {
+          console.error('Failed to register user in backend');
+        }
+      } catch (error) {
+        console.error('Error registering user:', error);
+      }
+    };
+
+    registerUser();
+  }, [currentUser, smartAccount]);
 
   // User is not logged in
   if (!currentUser) {
@@ -51,7 +93,7 @@ export const DonationFlow: React.FC = () => {
             </p>
             <p className="font-semibold text-gray-900 dark:text-white">
               {/* @ts-ignore - Coinbase CDP types may vary */}
-              {currentUser.email || currentUser.emailAddress || "User"}
+              {currentUser.authenticationMethods?.email?.email || "User"}
             </p>
             {smartAccount && (
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 font-mono">

@@ -1,11 +1,25 @@
+// Load environment variables FIRST before any imports
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env.local' });
+
+// Now import everything else
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
-
-// Load environment variables
-dotenv.config({ path: '.env.local' });
+import {
+  createOrUpdateUser,
+  getUserByEmail,
+  getUserByWallet,
+  createDonation,
+  getDonations,
+  getDonationsByEmail,
+  calculateFIFONotifications,
+  processReimbursement,
+  createReimbursement,
+} from './api/lib/storage.js';
+import { getResendClient, DEFAULT_FROM_EMAIL } from './api/lib/resend-client.js';
+import { generateNotificationEmail } from './api/lib/email-template.js';
 
 const app = express();
 const PORT = 3001;
@@ -246,6 +260,318 @@ app.post('/api/onramp/buy-quote', async (req, res) => {
     });
   }
 });
+
+// ============= USER MANAGEMENT ENDPOINTS =============
+
+// POST - Create or update user (email-wallet mapping)
+// GET - Get user by email or wallet address
+app.route('/api/users')
+  .get((req, res) => {
+    try {
+      const { email, walletAddress } = req.query;
+
+      if (!email && !walletAddress) {
+        return res.status(400).json({
+          error: 'Must provide either email or walletAddress query parameter',
+        });
+      }
+
+      let user;
+      if (email) {
+        user = getUserByEmail(email);
+      } else if (walletAddress) {
+        user = getUserByWallet(walletAddress);
+      }
+
+      if (!user) {
+        return res.status(404).json({
+          error: 'User not found',
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        user,
+      });
+    } catch (error) {
+      console.error('Users API error:', error);
+      return res.status(500).json({
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  })
+  .post((req, res) => {
+    try {
+      const { email, walletAddress } = req.body;
+
+      if (!email || !walletAddress) {
+        return res.status(400).json({
+          error: 'Missing required fields',
+          required: ['email', 'walletAddress'],
+        });
+      }
+
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return res.status(400).json({
+          error: 'Invalid email format',
+        });
+      }
+
+      // Validate wallet address (basic check)
+      if (!walletAddress.startsWith('0x') || walletAddress.length !== 42) {
+        return res.status(400).json({
+          error: 'Invalid wallet address format',
+        });
+      }
+
+      const user = createOrUpdateUser(email, walletAddress);
+
+      return res.status(200).json({
+        success: true,
+        user,
+      });
+    } catch (error) {
+      console.error('Users API error:', error);
+      return res.status(500).json({
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  });
+
+// ============= DONATION TRACKING ENDPOINTS =============
+
+// POST - Record a new donation
+// GET - Get all donations or donations by email
+app.route('/api/donations')
+  .get((req, res) => {
+    try {
+      const { email } = req.query;
+
+      let donations;
+      if (email) {
+        donations = getDonationsByEmail(email);
+      } else {
+        donations = getDonations();
+      }
+
+      // Sort by timestamp (newest first)
+      donations.sort((a, b) =>
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
+
+      return res.status(200).json({
+        success: true,
+        donations,
+        count: donations.length,
+      });
+    } catch (error) {
+      console.error('Donations API error:', error);
+      return res.status(500).json({
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  })
+  .post((req, res) => {
+    try {
+      const { walletAddress, amount, txHash, blockNumber } = req.body;
+
+      if (!walletAddress || !amount || !txHash || blockNumber === undefined) {
+        return res.status(400).json({
+          error: 'Missing required fields',
+          required: ['walletAddress', 'amount', 'txHash', 'blockNumber'],
+        });
+      }
+
+      // Validate amount is a positive number
+      const amountNum = parseFloat(amount);
+      if (isNaN(amountNum) || amountNum <= 0) {
+        return res.status(400).json({
+          error: 'Invalid amount - must be a positive number',
+        });
+      }
+
+      // Get user by wallet address to find their email
+      const user = getUserByWallet(walletAddress);
+
+      if (!user) {
+        return res.status(404).json({
+          error: 'User not found - wallet address not registered',
+          hint: 'User must be registered via /api/users before creating donations',
+        });
+      }
+
+      const donation = createDonation(
+        user.email,
+        walletAddress,
+        amount,
+        txHash,
+        blockNumber
+      );
+
+      return res.status(201).json({
+        success: true,
+        donation,
+      });
+    } catch (error) {
+      console.error('Donations API error:', error);
+      return res.status(500).json({
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  });
+
+// ============= FIFO NOTIFICATION ENDPOINTS =============
+
+// POST - Calculate and process FIFO notifications for a reimbursement
+// GET - Preview FIFO notifications without processing
+app.route('/api/fifo')
+  .get((req, res) => {
+    try {
+      const { amount } = req.query;
+
+      if (!amount) {
+        return res.status(400).json({
+          error: 'Amount query parameter is required',
+        });
+      }
+
+      const amountNum = parseFloat(amount);
+      if (isNaN(amountNum) || amountNum <= 0) {
+        return res.status(400).json({
+          error: 'Invalid amount - must be a positive number',
+        });
+      }
+
+      const notifications = calculateFIFONotifications(amount);
+
+      return res.status(200).json({
+        success: true,
+        preview: true,
+        notifications,
+        summary: {
+          totalAmount: amount,
+          donorsAffected: notifications.length,
+          message: `Preview: ${notifications.length} donor(s) would be notified`,
+        },
+      });
+    } catch (error) {
+      console.error('FIFO API error:', error);
+      return res.status(500).json({
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  })
+  .post(async (req, res) => {
+    try {
+      const { amount, txHash, blockNumber, invoiceData } = req.body;
+
+      if (!amount || !txHash || blockNumber === undefined || !invoiceData) {
+        return res.status(400).json({
+          error: 'Missing required fields',
+          required: ['amount', 'txHash', 'blockNumber', 'invoiceData'],
+        });
+      }
+
+      // Validate amount is a positive number
+      const amountNum = parseFloat(amount);
+      if (isNaN(amountNum) || amountNum <= 0) {
+        return res.status(400).json({
+          error: 'Invalid amount - must be a positive number',
+        });
+      }
+
+      // Record the reimbursement
+      const reimbursement = createReimbursement(amount, txHash, blockNumber, invoiceData);
+
+      // Process FIFO and get notifications
+      const notifications = processReimbursement(amount);
+
+      // Send email notifications to affected donors
+      const emailResults = [];
+
+      console.log('📧 Attempting to initialize email client...');
+      const resend = getResendClient(); // Get the lazy-loaded client
+      console.log('📧 Resend client initialized:', !!resend);
+      console.log('📧 Notifications count:', notifications.length);
+
+      if (resend && notifications.length > 0) {
+        console.log(`Sending ${notifications.length} email notification(s)...`);
+
+        for (const notification of notifications) {
+          try {
+            const emailData = {
+              donorEmail: notification.email,
+              amountSpent: notification.amountSpent,
+              originalAmount: notification.originalAmount,
+              percentageSpent: notification.percentageSpent,
+              reimbursementAmount: amount,
+              invoiceData,
+              txHash,
+              walletAddress: notification.walletAddress,
+            };
+
+            const { subject, html, text } = generateNotificationEmail(emailData);
+
+            const result = await resend.emails.send({
+              from: DEFAULT_FROM_EMAIL,
+              to: notification.email,
+              subject,
+              html,
+              text,
+            });
+
+            console.log(`✅ Email sent to ${notification.email}:`, result.data?.id);
+            emailResults.push({
+              email: notification.email,
+              success: true,
+            });
+          } catch (error) {
+            console.error(`❌ Failed to send email to ${notification.email}:`, error);
+            emailResults.push({
+              email: notification.email,
+              success: false,
+              error: error instanceof Error ? error.message : 'Unknown error',
+            });
+          }
+        }
+      } else {
+        if (!resend) {
+          console.warn('⚠️  Resend client not initialized - emails will not be sent');
+          console.warn('⚠️  RESEND_API_KEY in env:', !!process.env.RESEND_API_KEY);
+        }
+        if (notifications.length === 0) {
+          console.log('ℹ️  No donors to notify (no donations affected by this reimbursement)');
+        }
+      }
+
+      return res.status(200).json({
+        success: true,
+        reimbursement,
+        notifications,
+        emailResults,
+        summary: {
+          totalAmount: amount,
+          donorsAffected: notifications.length,
+          emailsSent: emailResults.filter(r => r.success).length,
+          emailsFailed: emailResults.filter(r => !r.success).length,
+          message: `${notifications.length} donor(s) notified about this reimbursement`,
+        },
+      });
+    } catch (error) {
+      console.error('FIFO API error:', error);
+      return res.status(500).json({
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  });
 
 app.listen(PORT, () => {
   console.log(`\n🚀 API Server running on http://localhost:${PORT}`);
